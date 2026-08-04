@@ -69,8 +69,19 @@ async function main() {
     await emitter.clone(targetDir);
     console.log(green('✅ Template downloaded successfully!'));
   } catch (error) {
-    console.error(red('\n❌ Failed to download template repository from GitHub:'), error);
-    process.exit(1);
+    console.log(gray('ℹ️ HTTP download failed. Retrying using local Git credentials...'));
+    try {
+      const emitter = degit(gitSource, {
+        cache: false,
+        force: true,
+        mode: 'git'
+      });
+      await emitter.clone(targetDir);
+      console.log(green('✅ Template downloaded successfully via Git clone!'));
+    } catch (gitError) {
+      console.error(red('\n❌ Failed to download template repository from GitHub:'), gitError);
+      process.exit(1);
+    }
   }
 
   const packageJsonPath = path.join(targetDir, 'package.json');
@@ -113,8 +124,8 @@ async function main() {
   if (!runInstall) {
     console.log(cyan(`  npm install`));
   }
+  console.log(cyan(`  npx prisma generate`));
   if (template === 'ts') {
-    console.log(cyan(`  npx prisma generate`));
     console.log(cyan(`  npm run dev`));
   } else {
     console.log(cyan(`  npm start`));
