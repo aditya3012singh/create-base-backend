@@ -1,12 +1,10 @@
 {
-  "name": "create-base-backend",
+  "name": "@aditya3012singh/create-base-backend",
   "version": "1.0.0",
   "description": "Interactive CLI initializer for production-ready Node.js Express APIs",
   "type": "module",
   "main": "index.js",
-  "bin": {
-    "create-base-backend": "./index.js"
-  },
+  "bin": "./index.js",
   "keywords": [
     "express",
     "typescript",
