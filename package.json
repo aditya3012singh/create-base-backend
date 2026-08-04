@@ -1,0 +1,25 @@
+{
+  "name": "create-base-backend",
+  "version": "1.0.0",
+  "description": "Interactive CLI initializer for production-ready Node.js Express APIs",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "create-base-backend": "./index.js"
+  },
+  "keywords": [
+    "express",
+    "typescript",
+    "prisma",
+    "boilerplate",
+    "starter",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "prompts": "^2.4.2",
+    "kolorist": "^1.8.0",
+    "degit": "^2.8.4"
+  }
+}
