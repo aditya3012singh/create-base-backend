@@ -139,14 +139,13 @@ async function main() {
     if (fs.existsSync(prismaDir)) fs.rmSync(prismaDir, { recursive: true, force: true });
 
     const dbConfig = path.join(targetDir, `src/core/config/db.${ext}`);
-    const dbWrapper = path.join(targetDir, `src/core/config/db.wrapper.${ext}`);
     const prismaClientConfig = path.join(targetDir, `src/core/config/prisma.${ext}`);
     const prismaUserRepo = path.join(targetDir, `src/modules/auth/repositories/providers/prisma.user.repository.${ext}`);
 
     if (fs.existsSync(dbConfig)) fs.unlinkSync(dbConfig);
-    if (fs.existsSync(dbWrapper)) fs.unlinkSync(dbWrapper);
     if (fs.existsSync(prismaClientConfig)) fs.unlinkSync(prismaClientConfig);
     if (fs.existsSync(prismaUserRepo)) fs.unlinkSync(prismaUserRepo);
+
 
     // Make Mongoose database configuration the default db configuration
     const mongooseConfig = path.join(targetDir, `src/core/config/mongoose.${ext}`);
@@ -163,22 +162,36 @@ async function main() {
       fs.writeFileSync(userRepoFile, repoContent, 'utf8');
     }
 
-    // Replace Prisma connection boot with Mongoose connection boot in server.ts/js
-    const serverPath = path.join(targetDir, `src/server.${ext}`);
-    if (fs.existsSync(serverPath)) {
-      let serverContent = fs.readFileSync(serverPath, 'utf8');
-      if (isTs) {
-        serverContent = serverContent
-          .replace(/import \{ prisma \} from '\.\/core\/config\/db\.wrapper\.js';/g, "import Database from './core/config/db.js';")
-          .replace(/prisma\.\$connect\(\)/g, 'Database.connect()')
-          .replace(/prisma\.\$disconnect\(\)/g, 'Database.disconnect()');
-      } else {
-        serverContent = serverContent
-          .replace(/Database\.client\.\$connect\(\)/g, 'Database.connect()')
-          .replace(/Database\.client\.\$disconnect\(\)/g, 'Database.disconnect()');
+
+
+    // --- GLOBAL REWRITE PASS: replace all remaining db.wrapper / DBWrapper / prisma references ---
+    function rewriteAllSrcFiles(dir) {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          rewriteAllSrcFiles(fullPath);
+        } else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.js'))) {
+          let content = fs.readFileSync(fullPath, 'utf8');
+          const original = content;
+          // Replace prisma named import from db.wrapper with mongoose
+          content = content.replace(/import \{ prisma \} from '[^']*db\.wrapper\.js';\n?/g, "import mongoose from 'mongoose';\n");
+          // Replace DBWrapper health check ping with mongoose ping
+          content = content.replace(
+            /DBWrapper\.execute\('[^']*',\s*\(db\)\s*=>\s*db\.\$queryRaw`SELECT 1`\)/g,
+            "mongoose.connection.db?.admin().ping()"
+          );
+          // Replace bare prisma.$queryRaw`SELECT 1`
+          content = content.replace(/prisma\.\$queryRaw`SELECT 1`/g, "mongoose.connection.db?.admin().ping()");
+          // Replace Database.client.$queryRaw`SELECT 1`
+          content = content.replace(/Database\.client\.\$queryRaw`SELECT 1`/g, "mongoose.connection.db?.admin().ping()");
+          // Replace prisma.$connect / $disconnect
+          content = content.replace(/prisma\.\$connect\(\)/g, 'Database.connect()');
+          content = content.replace(/prisma\.\$disconnect\(\)/g, 'Database.disconnect()');
+          if (content !== original) fs.writeFileSync(fullPath, content, 'utf8');
+        }
       }
-      fs.writeFileSync(serverPath, serverContent, 'utf8');
     }
+    rewriteAllSrcFiles(path.join(targetDir, 'src'));
   }
 
   // 2. Event messaging broker customization
@@ -187,38 +200,34 @@ async function main() {
   const dualModeBusFile = path.join(targetDir, `src/core/events/dualModeEventBus.${ext}`);
 
   if (eventBus === 'redis') {
-    // Keep dualModeEventBus as default eventBus (rename dualModeEventBus -> eventBus)
-    if (fs.existsSync(eventBusFile)) fs.unlinkSync(eventBusFile);
-    if (fs.existsSync(dualModeBusFile)) {
-      fs.renameSync(dualModeBusFile, eventBusFile);
-    }
-    // Delete unused providers folder
+    // Keep dualModeEventBus, eventBus, and redisEventBus intact for Redis Pub/Sub
+    // Simply delete unused alternative providers folder
     if (fs.existsSync(providersDir)) fs.rmSync(providersDir, { recursive: true, force: true });
   } else if (eventBus === 'rabbitmq' || eventBus === 'kafka') {
-    // Remove dualModeEventBus and redisEventBus
+    // Update dualModeEventBus to use the selected distributed provider (kafka or rabbitmq)
+    if (fs.existsSync(dualModeBusFile)) {
+      let content = fs.readFileSync(dualModeBusFile, 'utf8');
+      const providerImport = eventBus === 'kafka'
+        ? "import kafkaEventBus from './providers/kafka.bus.js';"
+        : "import rabbitMQEventBus from './providers/rabbitmq.bus.js';";
+      const busVarName = eventBus === 'kafka' ? 'kafkaEventBus' : 'rabbitMQEventBus';
+
+      content = content
+        .replace(/import redisEventBus from '\.\/redisEventBus\.js';/g, providerImport)
+        .replace(/private distributedBus = redisEventBus;/g, `private distributedBus = ${busVarName};`);
+
+      fs.writeFileSync(dualModeBusFile, content, 'utf8');
+    }
+
+    // Delete unused alternative provider file
+    const otherProvider = eventBus === 'kafka' ? 'rabbitmq' : 'kafka';
+    const otherBusFile = path.join(providersDir, `${otherProvider}.bus.${ext}`);
+    if (fs.existsSync(otherBusFile)) fs.unlinkSync(otherBusFile);
+
     const redisBusFile = path.join(targetDir, `src/core/events/redisEventBus.${ext}`);
-    if (fs.existsSync(eventBusFile)) fs.unlinkSync(eventBusFile);
+    const distributedBusFile = path.join(targetDir, `src/core/events/distributedEventBus.${ext}`);
     if (fs.existsSync(redisBusFile)) fs.unlinkSync(redisBusFile);
-    if (fs.existsSync(dualModeBusFile)) fs.unlinkSync(dualModeBusFile);
-
-    // Promote rabbitmq or kafka bus to the default eventBus
-    const selectedBusFile = path.join(providersDir, `${eventBus}.bus.${ext}`);
-    if (fs.existsSync(selectedBusFile)) {
-      fs.renameSync(selectedBusFile, eventBusFile);
-    }
-
-    // Delete unused providers folder
-    if (fs.existsSync(providersDir)) fs.rmSync(providersDir, { recursive: true, force: true });
-
-    // Modify server.ts/js to initialize the promoted event bus (which requires .initialize())
-    const indexAppPath = path.join(targetDir, `src/index.${ext}`);
-    if (fs.existsSync(indexAppPath)) {
-      let indexContent = fs.readFileSync(indexAppPath, 'utf8');
-      indexContent = indexContent
-        .replace(/registerAllListeners\(\)/g, 'await eventBus.initialize();\n    registerAllListeners()')
-        .replace(/import { registerAllListeners }/g, 'import eventBus from "./core/events/eventBus.js";\nimport { registerAllListeners }');
-      fs.writeFileSync(indexAppPath, indexContent, 'utf8');
-    }
+    if (fs.existsSync(distributedBusFile)) fs.unlinkSync(distributedBusFile);
   }
 
   // 3. Optional Features Customization: Testing
