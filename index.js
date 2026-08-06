@@ -175,6 +175,10 @@ async function main() {
           const original = content;
           // Replace prisma named import from db.wrapper with mongoose
           content = content.replace(/import \{ prisma \} from '[^']*db\.wrapper\.js';\n?/g, "import mongoose from 'mongoose';\n");
+          // Replace DBWrapper import in healthCheck files with mongoose
+          if (entry.name.startsWith('healthCheck.')) {
+            content = content.replace(/import DBWrapper from '[^']*db\.wrapper\.js';\n?/g, "import mongoose from 'mongoose';\n");
+          }
           // Replace DBWrapper health check ping with mongoose ping
           content = content.replace(
             /DBWrapper\.execute\('[^']*',\s*\(db\)\s*=>\s*db\.\$queryRaw`SELECT 1`\)/g,
