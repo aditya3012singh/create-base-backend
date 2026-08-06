@@ -125,14 +125,16 @@ async function main() {
 
   // 1. Database layer customization
   if (database === 'postgres') {
-    // Remove Mongoose config & models & providers
+    // Remove Mongoose config & models & providers & seed
     const mongooseConfig = path.join(targetDir, `src/core/config/mongoose.${ext}`);
     const mongooseUserModel = path.join(targetDir, `src/modules/auth/models/user.model.${ext}`);
     const mongooseUserRepo = path.join(targetDir, `src/modules/auth/repositories/providers/mongoose.user.repository.${ext}`);
+    const mongooseSeed = path.join(targetDir, `src/core/config/seed.${ext}`);
     
     if (fs.existsSync(mongooseConfig)) fs.unlinkSync(mongooseConfig);
     if (fs.existsSync(mongooseUserModel)) fs.unlinkSync(mongooseUserModel);
     if (fs.existsSync(mongooseUserRepo)) fs.unlinkSync(mongooseUserRepo);
+    if (fs.existsSync(mongooseSeed)) fs.unlinkSync(mongooseSeed);
   } else if (database === 'mongodb') {
     // Remove Prisma configuration
     const prismaDir = path.join(targetDir, 'prisma');
@@ -294,7 +296,7 @@ async function main() {
         delete devDeps['prisma'];
         delete packageJson['prisma'];
         delete scripts['db:migrate'];
-        delete scripts['db:seed'];
+        scripts['db:seed'] = isTs ? 'tsx src/core/config/seed.ts' : 'node src/core/config/seed.js';
       }
 
       if (eventBus === 'redis') {
