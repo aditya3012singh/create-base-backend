@@ -214,7 +214,8 @@ async function main() {
 
       content = content
         .replace(/import redisEventBus from '\.\/redisEventBus\.js';/g, providerImport)
-        .replace(/private distributedBus = redisEventBus;/g, `private distributedBus = ${busVarName};`);
+        .replace(/private distributedBus = redisEventBus;/g, `private distributedBus = ${busVarName};`)
+        .replace(/this\.distributedBus = redisEventBus;/g, `this.distributedBus = ${busVarName};`);
 
       fs.writeFileSync(dualModeBusFile, content, 'utf8');
     }
@@ -297,10 +298,10 @@ async function main() {
         delete deps['kafkajs'];
         delete devDeps['@types/amqplib'];
       } else if (eventBus === 'rabbitmq') {
-        delete deps['ioredis'];
+        delete deps['redis'];
         delete deps['kafkajs'];
       } else if (eventBus === 'kafka') {
-        delete deps['ioredis'];
+        delete deps['redis'];
         delete deps['amqplib'];
         delete devDeps['@types/amqplib'];
       }
